@@ -33,7 +33,7 @@ def get_options():
     parser.add_option("-c", "--count", action="store", type="int",
         dest="count", default=1, help="Number of EBS volumes ")
     parser.add_option("-d", "--device", action="store", type="string",
-        dest="device", default="/dev/sdf",  help="block device to start with")
+        dest="device", default="/dev/xvdf",  help="block device to start with")
     parser.add_option("-f", "--filesystem", action="store", type="string",
         dest="filesystem", default="ext4", help="filesystem type")
     parser.add_option("-l", "--logvol", action="store", type="string",
@@ -53,10 +53,14 @@ def get_options():
     parser.add_option("-v", "--volgroup", action="store", type="string",
         dest="volgroup", default="VolGroupData", help="Volume Group Name")
     parser.add_option("-w", "--wipe",  action="store_true",
-        dest="wipe", default=False, help="format the new filesystem")
+        dest="wipe", default=False, help="Format the new filesystem")
     parser.add_option("", "--from-snapshot",  action="store",
         dest="snapshot", default=None,
         help="Create volumes from one or more ebs snapshots. Order preservation is essential")
+    parser.add_option("-i", "--iops",  action="store", type="int",
+        dest="iops", default=None, help="Specify provisioned iops")
+    parser.add_option("", "--type", action="store", type="string",
+        dest="voltype", default="standard", help="Type of volume to create: gp2 for General Purpose (SSD) volumes, io1 for Provisioned IOPS (SSD) volumes, or standard for Magnetic volumes")
     options, args = parser.parse_args()
     return options, args
 
@@ -114,7 +118,7 @@ if options.attach is True:
     if len(glob.glob(options.device)) > 0:
         print "You already have devices that start with %s." % options.device
         sys.exit(1)
-    
+
 if os.path.exists(options.md_device):
     print "Device %s already exists." % options.md_device
     sys.exit(1)
@@ -135,11 +139,6 @@ if options.raidlevel in even_number_raidlevels and options.count % 2 != 0:
     print "Number of volumes to be created in not compatible with raid level %s" % options.raidlevel
     sys.exit(1)
 
-my_devices = []
-
-for n in range(1, options.count + 1):
-    my_devices.append(options.device + str(n) )
-
 instance_data = boto.utils.get_instance_metadata()
 
 # connect to region of the current instance rather than default of us-east-1
@@ -149,21 +148,26 @@ region_name = zone[:-1]
 print "Connecting to region %s" % region_name
 ec2conn = ec2.connect_to_region(region_name)
 
+# trim the devices list to the ones we want to create
+devindex = devices.index(options.device)
+devices[0:devindex] = []
+devices = devices[:options.count]
+
 # map ebs devices ids to ubuntu devices
-attached_devices = map(attached_name, my_devices)
+attached_devices = map(attached_name, devices)
 
 vol_ids = []
 
 if (options.attach or options.snapshot) and not options.test:
 
-    for key, device in enumerate(my_devices):
+    for key, device in enumerate(devices):
         if my_snapshots:
             snapshot = my_snapshots[key]
             print "Restoring snapshot %s to device %s" % (device, snapshot)
-            vol = ec2conn.create_volume(options.size, instance_data['placement']['availability-zone'], snapshot=snapshot)
+            vol = ec2conn.create_volume(options.size, instance_data['placement']['availability-zone'], snapshot=snapshot, volume_type=options.voltype, iops=options.iops)
         else:
             print "Creating new volume on device %s" % device
-            vol = ec2conn.create_volume(options.size, instance_data['placement']['availability-zone'])
+            vol = ec2conn.create_volume(options.size, instance_data['placement']['availability-zone'], volume_type=options.voltype, iops=options.iops)
         print "Created volume: ", vol.id
 
         print "Waiting for %s to change to state available" % vol.id
@@ -183,9 +187,9 @@ if (options.attach or options.snapshot) and not options.test:
 
     for device in attached_devices:
         found = False
-    
+
         while found is False:
-        
+
             print "Waiting for %s to become available." % device
             if os.path.exists(device):
                 print "%s has been found." % device
@@ -199,7 +203,7 @@ if not os.path.isdir(options.mountpoint):
         os.makedirs(options.mountpoint)
 else:
     print "WARNING mount point already exists: %s" % options.mountpoint
-    
+
 commands = list()
 
 if options.snapshot:
