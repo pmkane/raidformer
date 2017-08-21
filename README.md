@@ -6,7 +6,7 @@ Hi all.  I wanted a way to dynamically create ebs-backed raid sets that were als
 
 I set out to create a script that could run in UserData does just this.  Here's a simple example:
 
-`raid_former.py --size 1 --count 2 --raidlevel 1 --mountpoint /nfsexports --wipe --tag foofoo --attach`
+`raidformer.py --size 1 --count 2 --raidlevel 1 --mountpoint /nfsexports --wipe --tag foofoo --attach`
 
 In this case, the script will:
 
