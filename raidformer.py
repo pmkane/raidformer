@@ -184,6 +184,7 @@ if (options.attach or options.snapshot) and not options.test:
         print "Attached volume: ", vol.id
         vol_ids.append(vol.id)
         vol.add_tag("Name", options.tag)
+        vol.add_tag("raidformer_created", '1')
 
     for device in attached_devices:
         found = False
